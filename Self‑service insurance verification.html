@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>استعلام التامين - جهاز خدمات ذاتية</title>
+  <style>
+    :root{ --primary:#0b7285; --secondary:#06b6d4; --bg:#f6fbfc; --card:#ffffff; }
+    html,body{height:100%;margin:0;font-family:Arial,"Noto Naskh Arabic",sans-serif;background:linear-gradient(180deg,var(--bg),#eef8fb);}
+    .kiosk{min-height:100%;display:flex;align-items:center;justify-content:center;padding:40px}
+    .card{width:820px;max-width:95%;background:var(--card);box-shadow:0 8px 30px rgba(11,114,133,0.08);border-radius:12px;overflow:hidden;display:grid;grid-template-columns:1fr 420px}
+    .left{padding:30px 28px;border-left:6px solid rgba(6,182,212,0.08);background:linear-gradient(90deg,rgba(6,182,212,0.02),transparent)}
+    .right{background:var(--primary);color:#fff;padding:28px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+
+    h1{margin:0 0 12px 0;font-size:22px;color:#07323a}
+    p.lead{margin:0 0 18px 0;color:#28666b;font-size:15px}
+
+    /* لغات + أعلام */
+    .lang-box{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+    .lang-btn{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:8px;cursor:pointer;border:1px solid #d9d9d9;font-size:13px;font-weight:700;color:#0b4b51}
+    .lang-btn img{width:22px;height:22px;border-radius:4px}
+    .lang-btn.active{background:#06b6d4;color:#fff;border-color:#06b6d4}
+
+    input[type=text]{width:100%;padding:12px 14px;border-radius:8px;border:1px solid #d9f0f3;background:#fbffff;font-size:16px}
+    button{background:var(--secondary);border:none;color:#04323a;padding:12px 18px;border-radius:8px;font-weight:700;cursor:pointer}
+
+    .result{margin-top:18px;padding:16px;border-radius:10px;background:#f3fdff;border:1px solid rgba(6,182,212,0.08)}
+    .insurer{display:flex;align-items:center;gap:14px}
+    .logo img{width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+
+    .status{margin-top:8px;padding:10px;border-radius:8px;font-weight:800;display:inline-block}
+    .ok{background:#e8ffef;color:#175d2a;border:1px solid rgba(23,93,42,0.12)}
+    .no{background:#fff0f0;color:#7a1a1a;border:1px solid rgba(122,26,26,0.08)}
+
+    .extra-msg{margin-top:10px;font-weight:700;color:#0b4b51}
+
+    .footer{margin-top:20px;font-size:12px;color:#0b4b51;text-align:center;font-weight:700}
+
+    .right .hospital-brand img{width:150px;height:auto;filter:brightness(10)}
+  </style>
+</head>
+<body>
+  <div class="kiosk">
+    <div class="card">
+
+      <div class="left">
+
+        <!-- لغات مع أعلام -->
+        <div class="lang-box" id="langBox"></div>
+
+        <h1 data-t="title">استعلام عن التامين الصحي</h1>
+        <p class="lead" data-t="subtitle">ادخل رقم الهوية الوطنية واضغط استعلام لمعرفة ما إذا كانت تامينك معتمدة في مستشفانا.</p>
+
+        <label data-t="idLabel" style="margin-bottom:8px;display:block;color:#0b4b51;font-weight:700">رقم الهوية</label>
+        <input id="idInput" type="text" maxlength="10" placeholder="1078681143  \ 1078681144" inputmode="numeric" pattern="[0-9]*" title="Only numbers are allowed">
+        <br><br>
+        <button id="checkBtn" data-t="check">استعلام</button>
+
+        <div id="resultArea" class="result" style="display:none"></div>
+
+        <div class="footer">SAUD ALSHARIF 17246 SNH</div>
+
+      </div>
+
+      <div class="right">
+        <div class="hospital-brand">
+          <img src="https://abeerksa.com/CorporateSSO/Content/images/logo.png" alt="شعار شركة العبير">
+          <h2 data-t="hospital">مستشفى الأهلي السعودي</h2>
+          <div style="text-align:center;max-width:220px" data-t="description">خدمة الاستعلام الذاتي عن قبول التامين — جهاز الزيارة</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+
+/* اللغات */
+const languages = [
+  {code:'ar',label:'العربية',flag:'https://flagcdn.com/w20/sa.png'},
+  {code:'en',label:'English',flag:'https://flagcdn.com/w20/gb.png'},
+  {code:'hi',label:'Hindi',flag:'https://flagcdn.com/w20/in.png'},
+  {code:'ur',label:'Urdu',flag:'https://flagcdn.com/w20/pk.png'},
+  {code:'zh',label:'中文',flag:'https://flagcdn.com/w20/cn.png'},
+  {code:'de',label:'Deutsch',flag:'https://flagcdn.com/w20/de.png'},
+  {code:'tr',label:'Türkçe',flag:'https://flagcdn.com/w20/tr.png'},
+  {code:'ru',label:'Русский',flag:'https://flagcdn.com/w20/ru.png'}
+];
+
+const langs = {
+  ar:{title:"استعلام عن التامين الصحي",subtitle:"ادخل رقم الهوية الوطنية واضغط استعلام لمعرفة ما إذا كانت تامينك معتمدة في مستشفانا.",idLabel:"رقم الهوية",check:"استعلام",hospital:"مستشفى الأهلي السعودي",description:"خدمة الاستعلام الذاتي عن قبول التامين — جهاز الزيارة",approvedMsg:"معتمد لدينا يمكنك الآن التوجه إلى الاستقبال لكي نهتم بك",notApproved:"غير معتمد لدينا"},
+  en:{title:"Insurance Inquiry",subtitle:"Enter your ID number to check if your insurance is accepted.",idLabel:"ID Number",check:"Check",hospital:"Saudi Ahli Hospital",description:"Self‑service insurance verification",approvedMsg:"Approved. Please proceed to reception.",notApproved:"Not approved"},
+  hi:{title:"बीमा जांच",subtitle:"कृपया पहचान संख्या दर्ज करें।",idLabel:"पहचान संख्या",check:"जांचें",hospital:"सऊदी अहली अस्पताल",description:"स्वयं सेवा बीमा जाँच",approvedMsg:"स्वीकृत। कृपया रिसेप्शन पर जाएँ।",notApproved:"अस्वीकृत"},
+  ur:{title:"انشورنس چیک کریں",subtitle:"براہ کرم شناختی نمبر درج کریں۔",idLabel:"شناختی نمبر",check:"چیک کریں",hospital:"سعودی اہلی ہسپتال",description:"سیلف سروس انشورنس چیک",approvedMsg:"منظور شدہ۔ براہ کرم ریسپشن جائیں۔",notApproved:"نامنظور"},
+  zh:{title:"保险查询",subtitle:"请输入您的身份证号。",idLabel:"身份证号",check:"查询",hospital:"沙特阿赫利医院",description:"自助保险验证",approvedMsg:"已通过，请前往前台。",notApproved:"未通过"},
+  de:{title:"Versicherungsprüfung",subtitle:"Geben Sie Ihre ID ein.",idLabel:"ID Nummer",check:"Prüfen",hospital:"Saudi Ahli Krankenhaus",description:"Selbstbedienung Versicherungsprüfung",approvedMsg:"Genehmigt. Bitte zur Rezeption gehen.",notApproved:"Nicht genehmigt"},
+  tr:{title:"Sigorta Sorgulama",subtitle:"Kimlik numaranızı girin.",idLabel:"Kimlik Numarası",check:"Sorgula",hospital:"Suudi Ahli Hastanesi",description:"Self Servis Sigorta Doğrulama",approvedMsg:"Onaylandı. Lütfen resepsiyona gidin.",notApproved:"Onaylanmadı"},
+  ru:{title:"Проверка страховки",subtitle:"Введите ваш ID.",idLabel:"ID номер",check:"Проверить",hospital:"Сауди Ахли Больница",description:"Самостоятельная проверка страховки",approvedMsg:"Одобрено. Пожалуйста, пройдите к ресепшену.",notApproved:"Не одобрено"}
+};
+
+const langBox=document.getElementById('langBox');
+let currentLang='ar';
+
+languages.forEach(l=>{
+  const btn=document.createElement('div');
+  btn.className='lang-btn';
+  btn.innerHTML=`<img src='${l.flag}'><span>${l.label}</span>`;
+  btn.onclick=()=>{currentLang=l.code;applyLang();document.querySelectorAll('.lang-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');};
+  if(l.code==='ar') btn.classList.add('active');
+  langBox.appendChild(btn);
+});
+
+function applyLang(){
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const key=el.getAttribute('data-t');
+    el.textContent=langs[currentLang][key];
+  });
+}
+applyLang();
+
+/* قاعدة البيانات */
+const db=[
+  {id:'1078681143',name:'بوبا (Bupa)',approved:true,info:'',logo:'https://iconape.com/wp-content/png_logo_vector/bupa-logo.png'},
+  {id:'1078681144',name:'التعاونية (Tawuniya)',approved:false,info:'',logo:'https://iconape.com/wp-content/files/qz/388323/svg/388323.svg'}
+];
+
+const idInput=document.getElementById('idInput');
+const resultArea=document.getElementById('resultArea');
+const checkBtn=document.getElementById('checkBtn');
+
+function renderResult(r){
+  const L=langs[currentLang];
+
+  if(!r){
+    resultArea.style.display='block';
+    resultArea.innerHTML=`<div class='status no'>${L.notApproved}</div>`;
+    return;
+  }
+
+  let statusText = r.approved ? L.approvedMsg : L.notApproved;
+
+  resultArea.style.display='block';
+  resultArea.innerHTML=`
+    <div class='insurer'>
+      <div class='logo'><img src='${r.logo}'></div>
+      <div>
+        <div style='font-weight:800;color:#04323a'>${r.name}</div>
+        <div class='status ${r.approved?"ok":"no"}'>${statusText}</div>
+      </div>
+    </div>`;
+}
+
+function run(){renderResult(db.find(x=>x.id===idInput.value.trim()));}
+checkBtn.onclick=run;
+idInput.onkeydown=e=>{if(e.key==='Enter')run();};
+
+  /* زر إعادة التحديث */
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = "مسح وتجديد الجلسة";
+  resetBtn.style.marginTop = "14px";
+  resetBtn.style.background = "#0b7285";
+  resetBtn.style.color = "#fff";
+  resetBtn.style.padding = "10px 16px";
+  resetBtn.style.borderRadius = "8px";
+  resetBtn.style.display = "none";
+  document.querySelector('.left').appendChild(resetBtn);
+
+  function resetSession(){
+    idInput.value = "";
+    resultArea.style.display = "none";
+    resetBtn.style.display = "none";
+  }
+  resetBtn.onclick = resetSession;
+
+  function run(){
+    renderResult(db.find(x=>x.id===idInput.value.trim()));
+    resetBtn.style.display = "block";
+
+    /* إعادة تحديث الصفحة بعد 10 ثواني */
+    setTimeout(()=>{
+      resetSession();
+    }, 10000);
+  }
+
+  checkBtn.onclick=run;
+  idInput.onkeydown=e=>{if(e.key==='Enter')run();};
+
+</script>
+
+</body>
+</html>
