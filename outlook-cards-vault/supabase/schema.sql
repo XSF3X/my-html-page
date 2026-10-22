@@ -73,29 +73,32 @@ after insert on auth.users for each row execute function private.handle_new_user
 create table if not exists private.admin_setup_gate (
   id integer primary key check (id = 1),
   state text not null check (state in ('not_started', 'in_progress', 'complete')),
+  secret_hash text,
   updated_at timestamptz not null default now()
 );
-insert into private.admin_setup_gate(id, state) values (1, 'not_started')
+insert into private.admin_setup_gate(id, state, secret_hash)
+values (1, 'not_started', '014fd4854fbd644fa9bbd8f63c0439ac39b77102d7a188cd892fef0576e50ced')
 on conflict (id) do nothing;
 revoke all on private.admin_setup_gate from public, anon, authenticated;
 
-create or replace function public.claim_admin_setup()
+drop function if exists public.claim_admin_setup();
+create or replace function public.claim_admin_setup(p_secret_hash text)
 returns boolean language plpgsql security definer set search_path = ''
-as $$
+as $
 begin
   update private.admin_setup_gate
   set state='in_progress', updated_at=now()
-  where id=1 and state='not_started'
+  where id=1 and state='not_started' and secret_hash=p_secret_hash
     and not exists (select 1 from public.profiles where role='admin');
   return found;
 end;
-$$;
+$;
 create or replace function public.finish_admin_setup()
 returns boolean language plpgsql security definer set search_path = ''
 as $$
 begin
   update private.admin_setup_gate
-  set state='complete', updated_at=now()
+  set state='complete', secret_hash=null, updated_at=now()
   where id=1 and state='in_progress'
     and exists (select 1 from public.profiles where role='admin');
   return found;
@@ -112,10 +115,10 @@ begin
   return found;
 end;
 $$;
-revoke all on function public.claim_admin_setup() from public, anon, authenticated;
+revoke all on function public.claim_admin_setup(text) from public, anon, authenticated;
 revoke all on function public.finish_admin_setup() from public, anon, authenticated;
 revoke all on function public.release_admin_setup() from public, anon, authenticated;
-grant execute on function public.claim_admin_setup() to service_role;
+grant execute on function public.claim_admin_setup(text) to service_role;
 grant execute on function public.finish_admin_setup() to service_role;
 grant execute on function public.release_admin_setup() to service_role;
 
