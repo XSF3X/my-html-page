@@ -37,10 +37,7 @@ grant select, insert, update, delete on public.cards to authenticated;
 create or replace function private.is_admin()
 returns boolean language sql stable security definer set search_path = ''
 as $fn$
-  select exists (
-    select 1 from public.profiles p
-    where p.id = (select auth.uid()) and p.role = 'admin'
-  );
+ select exists (select 1 from public.profiles p where p.id=(select auth.uid()) and p.role='admin');
 $fn$;
 revoke all on function private.is_admin() from public;
 grant execute on function private.is_admin() to authenticated;
@@ -68,33 +65,30 @@ create or replace function public.claim_admin_setup(p_secret_hash text)
 returns boolean language plpgsql security definer set search_path = ''
 as $fn$
 begin
-  update private.admin_setup_gate
-  set state='in_progress', updated_at=now()
-  where id=1 and state='not_started' and secret_hash=p_secret_hash
-    and not exists (select 1 from public.profiles where role='admin');
-  return found;
+ update private.admin_setup_gate set state='in_progress', updated_at=now()
+ where id=1 and state='not_started' and secret_hash=p_secret_hash
+ and not exists (select 1 from public.profiles where role='admin');
+ return found;
 end;
 $fn$;
 create or replace function public.finish_admin_setup()
 returns boolean language plpgsql security definer set search_path = ''
 as $fn$
 begin
-  update private.admin_setup_gate
-  set state='complete', secret_hash=null, updated_at=now()
-  where id=1 and state='in_progress'
-    and exists (select 1 from public.profiles where role='admin');
-  return found;
+ update private.admin_setup_gate set state='complete', secret_hash=null, updated_at=now()
+ where id=1 and state='in_progress'
+ and exists (select 1 from public.profiles where role='admin');
+ return found;
 end;
 $fn$;
 create or replace function public.release_admin_setup()
 returns boolean language plpgsql security definer set search_path = ''
 as $fn$
 begin
-  update private.admin_setup_gate
-  set state='not_started', updated_at=now()
-  where id=1 and state='in_progress'
-    and not exists (select 1 from public.profiles where role='admin');
-  return found;
+ update private.admin_setup_gate set state='not_started', updated_at=now()
+ where id=1 and state='in_progress'
+ and not exists (select 1 from public.profiles where role='admin');
+ return found;
 end;
 $fn$;
 
@@ -102,23 +96,20 @@ create or replace function public.issue_user_create_permit(p_username text, p_to
 returns boolean language plpgsql security definer set search_path = ''
 as $fn$
 begin
-  if p_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' or p_token_hash !~ '^[0-9a-f]{64}$' then
-    return false;
-  end if;
-  delete from private.user_create_permits where expires_at <= now();
-  insert into private.user_create_permits(username, token_hash, expires_at)
-  values (p_username, p_token_hash, now() + interval '5 minutes')
-  on conflict (username) do update
-  set token_hash=excluded.token_hash, expires_at=excluded.expires_at, created_at=now();
-  return true;
+ if p_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' or p_token_hash !~ '^[0-9a-f]{64}$' then return false; end if;
+ delete from private.user_create_permits where expires_at <= now();
+ insert into private.user_create_permits(username, token_hash, expires_at)
+ values (p_username, p_token_hash, now() + interval '5 minutes')
+ on conflict (username) do update set token_hash=excluded.token_hash, expires_at=excluded.expires_at, created_at=now();
+ return true;
 end;
 $fn$;
 create or replace function public.release_user_create_permit(p_username text, p_token_hash text)
 returns boolean language plpgsql security definer set search_path = ''
 as $fn$
 begin
-  delete from private.user_create_permits where username=p_username and token_hash=p_token_hash;
-  return found;
+ delete from private.user_create_permits where username=p_username and token_hash=p_token_hash;
+ return found;
 end;
 $fn$;
 
@@ -137,32 +128,28 @@ create or replace function private.handle_new_user()
 returns trigger language plpgsql security definer set search_path = ''
 as $fn$
 declare
-  v_username text;
-  v_token text;
-  v_token_hash text;
-  v_permitted text;
+ v_username text;
+ v_token text;
+ v_token_hash text;
+ v_permitted text;
 begin
-  v_username := nullif(lower(new.raw_user_meta_data ->> 'username'), '');
-  v_token := coalesce(new.raw_user_meta_data ->> 'provision_token', '');
-  if v_username is null or v_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then
-    raise exception 'User accounts must be created by the vault administrator';
-  end if;
-  if length(v_token) < 32 then
-    raise exception 'User creation must be authorized by the vault administrator';
-  end if;
-  v_token_hash := encode(public.digest(v_token, 'sha256'), 'hex');
-  delete from private.user_create_permits
-  where username=v_username and token_hash=v_token_hash and expires_at > now()
-  returning username into v_permitted;
-  if v_permitted is null then
-    raise exception 'User creation permit is missing, expired, or invalid';
-  end if;
-  insert into public.profiles (id, phone, username, display_name, role)
-  values (new.id, null, v_username, coalesce(new.raw_user_meta_data ->> 'display_name', ''), 'member')
-  on conflict (id) do update set
-    username = coalesce(public.profiles.username, excluded.username),
-    display_name = case when public.profiles.display_name = '' then excluded.display_name else public.profiles.display_name end;
-  return new;
+ v_username := nullif(lower(new.raw_user_meta_data ->> 'username'), '');
+ v_token := coalesce(new.raw_user_meta_data ->> 'provision_token', '');
+ if v_username is null or v_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then
+   raise exception 'User accounts must be created by the vault administrator';
+ end if;
+ if length(v_token) < 32 then raise exception 'User creation must be authorized by the vault administrator'; end if;
+ v_token_hash := encode(public.digest(v_token, 'sha256'), 'hex');
+ delete from private.user_create_permits
+ where username=v_username and token_hash=v_token_hash and expires_at > now()
+ returning username into v_permitted;
+ if v_permitted is null then raise exception 'User creation permit is missing, expired, or invalid'; end if;
+ insert into public.profiles (id, phone, username, display_name, role)
+ values (new.id, null, v_username, coalesce(new.raw_user_meta_data ->> 'display_name', ''), 'member')
+ on conflict (id) do update set
+  username=coalesce(public.profiles.username,excluded.username),
+  display_name=case when public.profiles.display_name='' then excluded.display_name else public.profiles.display_name end;
+ return new;
 end;
 $fn$;
 revoke all on function private.handle_new_user() from public;
@@ -172,19 +159,19 @@ for each row execute function private.handle_new_user();
 
 drop policy if exists profiles_select_self_or_admin on public.profiles;
 create policy profiles_select_self_or_admin on public.profiles for select to authenticated
-using ((id = (select auth.uid())) or (select private.is_admin()));
+using ((id=(select auth.uid())) or (select private.is_admin()));
 drop policy if exists profiles_update_display_name_self on public.profiles;
 create policy profiles_update_display_name_self on public.profiles for update to authenticated
-using (id = (select auth.uid())) with check (id = (select auth.uid()));
+using (id=(select auth.uid())) with check (id=(select auth.uid()));
 drop policy if exists cards_select_owner on public.cards;
 create policy cards_select_owner on public.cards for select to authenticated
-using (user_id = (select auth.uid()));
+using (user_id=(select auth.uid()));
 drop policy if exists cards_insert_owner on public.cards;
 create policy cards_insert_owner on public.cards for insert to authenticated
-with check (user_id = (select auth.uid()));
+with check (user_id=(select auth.uid()));
 drop policy if exists cards_update_owner on public.cards;
 create policy cards_update_owner on public.cards for update to authenticated
-using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+using (user_id=(select auth.uid())) with check (user_id=(select auth.uid()));
 drop policy if exists cards_delete_owner on public.cards;
 create policy cards_delete_owner on public.cards for delete to authenticated
-using (user_id = (select auth.uid()));
+using (user_id=(select auth.uid()));
