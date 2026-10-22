@@ -36,39 +36,22 @@ grant select, insert, update, delete on public.cards to authenticated;
 
 create or replace function private.is_admin()
 returns boolean language sql stable security definer set search_path = ''
-as $$
+as $fn$
   select exists (
     select 1 from public.profiles p
     where p.id = (select auth.uid()) and p.role = 'admin'
   );
-$$;
+$fn$;
 revoke all on function private.is_admin() from public;
 grant execute on function private.is_admin() to authenticated;
 
-create or replace function private.handle_new_user()
-returns trigger language plpgsql security definer set search_path = ''
-as $$
-declare
-  v_username text;
-begin
-  v_username := nullif(lower(new.raw_user_meta_data ->> 'username'), '');
-  if v_username is null or v_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then
-    raise exception 'User accounts must be created by the vault administrator';
-  end if;
-  insert into public.profiles (id, phone, username, display_name, role)
-  values (new.id, new.phone, v_username, coalesce(new.raw_user_meta_data ->> 'display_name', ''), 'member')
-  on conflict (id) do update set
-    phone = excluded.phone,
-    username = coalesce(public.profiles.username, excluded.username),
-    display_name = case when public.profiles.display_name = '' then excluded.display_name else public.profiles.display_name end;
-  return new;
-end;
-$$;
-revoke all on function private.handle_new_user() from public;
-
-drop trigger if exists on_auth_user_created_profile on auth.users;
-create trigger on_auth_user_created_profile
-after insert on auth.users for each row execute function private.handle_new_user();
+create table if not exists private.user_create_permits (
+  username text primary key,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+revoke all on private.user_create_permits from public, anon, authenticated;
 
 create table if not exists private.admin_setup_gate (
   id integer primary key check (id = 1),
@@ -81,10 +64,9 @@ values (1, 'not_started', '014fd4854fbd644fa9bbd8f63c0439ac39b77102d7a188cd892fe
 on conflict (id) do nothing;
 revoke all on private.admin_setup_gate from public, anon, authenticated;
 
-drop function if exists public.claim_admin_setup();
 create or replace function public.claim_admin_setup(p_secret_hash text)
 returns boolean language plpgsql security definer set search_path = ''
-as $
+as $fn$
 begin
   update private.admin_setup_gate
   set state='in_progress', updated_at=now()
@@ -92,10 +74,10 @@ begin
     and not exists (select 1 from public.profiles where role='admin');
   return found;
 end;
-$;
+$fn$;
 create or replace function public.finish_admin_setup()
 returns boolean language plpgsql security definer set search_path = ''
-as $$
+as $fn$
 begin
   update private.admin_setup_gate
   set state='complete', secret_hash=null, updated_at=now()
@@ -103,10 +85,10 @@ begin
     and exists (select 1 from public.profiles where role='admin');
   return found;
 end;
-$$;
+$fn$;
 create or replace function public.release_admin_setup()
 returns boolean language plpgsql security definer set search_path = ''
-as $$
+as $fn$
 begin
   update private.admin_setup_gate
   set state='not_started', updated_at=now()
@@ -114,13 +96,79 @@ begin
     and not exists (select 1 from public.profiles where role='admin');
   return found;
 end;
-$$;
+$fn$;
+
+create or replace function public.issue_user_create_permit(p_username text, p_token_hash text)
+returns boolean language plpgsql security definer set search_path = ''
+as $fn$
+begin
+  if p_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' or p_token_hash !~ '^[0-9a-f]{64}$' then
+    return false;
+  end if;
+  delete from private.user_create_permits where expires_at <= now();
+  insert into private.user_create_permits(username, token_hash, expires_at)
+  values (p_username, p_token_hash, now() + interval '5 minutes')
+  on conflict (username) do update
+  set token_hash=excluded.token_hash, expires_at=excluded.expires_at, created_at=now();
+  return true;
+end;
+$fn$;
+create or replace function public.release_user_create_permit(p_username text, p_token_hash text)
+returns boolean language plpgsql security definer set search_path = ''
+as $fn$
+begin
+  delete from private.user_create_permits where username=p_username and token_hash=p_token_hash;
+  return found;
+end;
+$fn$;
+
 revoke all on function public.claim_admin_setup(text) from public, anon, authenticated;
 revoke all on function public.finish_admin_setup() from public, anon, authenticated;
 revoke all on function public.release_admin_setup() from public, anon, authenticated;
+revoke all on function public.issue_user_create_permit(text,text) from public, anon, authenticated;
+revoke all on function public.release_user_create_permit(text,text) from public, anon, authenticated;
 grant execute on function public.claim_admin_setup(text) to service_role;
 grant execute on function public.finish_admin_setup() to service_role;
 grant execute on function public.release_admin_setup() to service_role;
+grant execute on function public.issue_user_create_permit(text,text) to service_role;
+grant execute on function public.release_user_create_permit(text,text) to service_role;
+
+create or replace function private.handle_new_user()
+returns trigger language plpgsql security definer set search_path = ''
+as $fn$
+declare
+  v_username text;
+  v_token text;
+  v_token_hash text;
+  v_permitted text;
+begin
+  v_username := nullif(lower(new.raw_user_meta_data ->> 'username'), '');
+  v_token := coalesce(new.raw_user_meta_data ->> 'provision_token', '');
+  if v_username is null or v_username !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then
+    raise exception 'User accounts must be created by the vault administrator';
+  end if;
+  if length(v_token) < 32 then
+    raise exception 'User creation must be authorized by the vault administrator';
+  end if;
+  v_token_hash := encode(public.digest(v_token, 'sha256'), 'hex');
+  delete from private.user_create_permits
+  where username=v_username and token_hash=v_token_hash and expires_at > now()
+  returning username into v_permitted;
+  if v_permitted is null then
+    raise exception 'User creation permit is missing, expired, or invalid';
+  end if;
+  insert into public.profiles (id, phone, username, display_name, role)
+  values (new.id, null, v_username, coalesce(new.raw_user_meta_data ->> 'display_name', ''), 'member')
+  on conflict (id) do update set
+    username = coalesce(public.profiles.username, excluded.username),
+    display_name = case when public.profiles.display_name = '' then excluded.display_name else public.profiles.display_name end;
+  return new;
+end;
+$fn$;
+revoke all on function private.handle_new_user() from public;
+drop trigger if exists on_auth_user_created_profile on auth.users;
+create trigger on_auth_user_created_profile after insert on auth.users
+for each row execute function private.handle_new_user();
 
 drop policy if exists profiles_select_self_or_admin on public.profiles;
 create policy profiles_select_self_or_admin on public.profiles for select to authenticated
