@@ -139,7 +139,7 @@ begin
    raise exception 'User accounts must be created by the vault administrator';
  end if;
  if length(v_token) < 32 then raise exception 'User creation must be authorized by the vault administrator'; end if;
- v_token_hash := encode(public.digest(v_token, 'sha256'), 'hex');
+ v_token_hash := encode(extensions.digest(v_token, 'sha256'), 'hex');
  delete from private.user_create_permits
  where username=v_username and token_hash=v_token_hash and expires_at > now()
  returning username into v_permitted;
