@@ -29,9 +29,9 @@
 </main>
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
-const URL='https://pheqddihzwnxvgsithus.supabase.co';
+const SUPABASE_URL='https://pheqddihzwnxvgsithus.supabase.co';
 const KEY='sb_publishable_k8qqkpDNtVOrhLQh3cszjQ_xBDRLt45';
-const db=createClient(URL,KEY); const $=id=>document.getElementById(id); const enc=new TextEncoder(),dec=new TextDecoder();
+const db=createClient(SUPABASE_URL,KEY); const $=id=>document.getElementById(id); const enc=new TextEncoder(),dec=new TextDecoder();
 let user=null,profile=null,phoneE164='',vaultKey=null,items=[],editing=null,adminUsers=[];
 function message(id,text,error=false){$(id).textContent=text;$(id).classList.toggle('err',!!error)}
 function show(id,visible){$(id).classList.toggle('hidden',!visible)}
